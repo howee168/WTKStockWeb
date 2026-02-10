@@ -4,6 +4,7 @@ import Dashboard from './components/features/Dashboard';
 import InventoryList from './components/features/InventoryList';
 import GRN from './components/features/Transactions/GRN';
 import MRRF from './components/features/Transactions/MRRF';
+import DemoTracker from './components/features/DemoTracker';
 import StockCard from './components/features/Reports/StockCard';
 import StockList from './components/features/Reports/StockList';
 import './styles/global.css';
@@ -22,6 +23,7 @@ function App() {
               <Route path="inventory" element={<InventoryList />} />
               <Route path="grn" element={<GRN />} />
               <Route path="mrrf" element={<MRRF />} />
+              <Route path="demo" element={<DemoTracker />} />
               <Route path="reports" element={<StockCard />} />
               <Route path="stock-list" element={<StockList />} />
               <Route path="*" element={<Navigate to="/" replace />} />

@@ -13,6 +13,8 @@ interface InventoryContextType {
     getItem: (id: string) => Item | undefined;
     batchImportItems: (items: Item[]) => Promise<void>;
     deleteAllItems: () => Promise<void>;
+    updateTransaction: (id: string, updates: Partial<Transaction>) => Promise<void>;
+    deleteTransaction: (id: string) => Promise<void>;
 }
 
 const InventoryContext = createContext<InventoryContextType | undefined>(undefined);
@@ -38,25 +40,49 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         updatedAt: i.updatedat || i.updatedAt || new Date().toISOString()
     });
 
-    const mapTxFromDB = (t: any): Transaction => ({
-        id: t.id,
-        itemId: t.itemid || t.itemId,
-        type: t.type,
-        date: t.date,
-        quantity: t.quantity,
-        balanceAfter: t.balanceafter || t.balanceAfter || 0,
-        remarks: t.remarks,
-        supplier: t.supplier,
-        doNumber: t.donumber || t.doNumber,
-        grnNumber: t.grnnumber || t.grnNumber,
-        poNumber: t.ponumber || t.poNumber,
-        qcStatus: t.qcstatus || t.qcStatus,
-        mrrfNumber: t.mrrfnumber || t.mrrfNumber,
-        jobOrderNumber: t.jobordernumber || t.jobOrderNumber,
-        pic: t.pic,
-        requestQty: t.requestqty || t.requestQty,
-        returnQty: t.returnqty || t.returnQty
-    });
+    const mapTxFromDB = (t: any): Transaction => {
+        // Parse metadata from remarks if present
+        let cleanRemarks = t.remarks || '';
+        let metadata: any = {};
+
+        if (cleanRemarks.includes('|||JSON|||')) {
+            const parts = cleanRemarks.split('|||JSON|||');
+            cleanRemarks = parts[0];
+            try {
+                metadata = JSON.parse(parts[1]);
+            } catch (e) {
+                console.error('Failed to parse metadata from remarks', e);
+            }
+        }
+
+        return {
+            id: t.id,
+            itemId: t.itemid || t.itemId,
+            type: t.type,
+            date: t.date,
+            quantity: t.quantity,
+            balanceAfter: t.balanceafter || t.balanceAfter || 0,
+            remarks: cleanRemarks,
+            supplier: t.supplier,
+            doNumber: t.donumber || t.doNumber,
+            grnNumber: t.grnnumber || t.grnNumber,
+            poNumber: t.ponumber || t.poNumber,
+            qcStatus: t.qcstatus || t.qcStatus,
+            mrrfNumber: t.mrrfnumber || t.mrrfNumber,
+            jobOrderNumber: t.jobordernumber || t.jobOrderNumber,
+            pic: t.pic,
+            requestQty: t.requestqty || t.requestQty,
+            returnQty: t.returnqty || t.returnQty,
+
+            // Demo - from metadata
+            isDemo: metadata.isDemo || t.is_demo || t.isDemo,
+            demoStatus: metadata.demoStatus || t.demo_status || t.demoStatus,
+            demoReturnDate: metadata.demoReturnDate || t.demo_return_date || t.demoReturnDate,
+            demoFeedback: metadata.demoFeedback || t.demo_feedback || t.demoFeedback,
+            demoItemName: metadata.demoItemName || t.demo_item_name || t.demoItemName,
+            customerPhone: metadata.customerPhone // Phone number for notifications
+        };
+    };
 
     // Helper to map keys to lowercase for DB
     const toDBItem = (item: Partial<Item>) => {
@@ -77,7 +103,8 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         return dbItem;
     };
 
-    const toDBTx = (tx: Partial<Transaction>) => {
+    // Helper to package transaction for DB (including metadata stuffing)
+    const prepareDBPayload = (tx: Partial<Transaction>) => {
         const dbTx: any = {};
         if (tx.id) dbTx.id = tx.id;
         if (tx.itemId) dbTx.itemid = tx.itemId;
@@ -85,7 +112,29 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         if (tx.date) dbTx.date = tx.date;
         if (tx.quantity !== undefined) dbTx.quantity = tx.quantity;
         if (tx.balanceAfter !== undefined) dbTx.balanceafter = tx.balanceAfter;
-        if (tx.remarks) dbTx.remarks = tx.remarks;
+
+        // Pack metadata into remarks
+        const metadata = {
+            isDemo: tx.isDemo,
+            demoStatus: tx.demoStatus,
+            demoReturnDate: tx.demoReturnDate,
+            demoFeedback: tx.demoFeedback,
+            demoItemName: tx.demoItemName,
+            customerPhone: tx.customerPhone
+        };
+
+        // Remove undefined keys from metadata
+        Object.keys(metadata).forEach(key => (metadata as any)[key] === undefined && delete (metadata as any)[key]);
+
+        const hasMetadata = Object.keys(metadata).length > 0;
+        const cleanRemarks = tx.remarks || '';
+
+        if (hasMetadata) {
+            dbTx.remarks = `${cleanRemarks}|||JSON|||${JSON.stringify(metadata)}`;
+        } else {
+            dbTx.remarks = cleanRemarks;
+        }
+
         if (tx.supplier) dbTx.supplier = tx.supplier;
         if (tx.doNumber) dbTx.donumber = tx.doNumber;
         if (tx.grnNumber) dbTx.grnnumber = tx.grnNumber;
@@ -96,8 +145,21 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         if (tx.pic) dbTx.pic = tx.pic;
         if (tx.requestQty !== undefined) dbTx.requestqty = tx.requestQty;
         if (tx.returnQty !== undefined) dbTx.returnqty = tx.returnQty;
+
+        // DO NOT send these flat fields if they don't exist in DB
+        // keeping them commented out for reference or if DB is updated later
+        /*
+        if (tx.isDemo !== undefined) dbTx.is_demo = tx.isDemo;
+        if (tx.demoStatus) dbTx.demo_status = tx.demoStatus;
+        if (tx.demoReturnDate) dbTx.demo_return_date = tx.demoReturnDate;
+        if (tx.demoFeedback) dbTx.demo_feedback = tx.demoFeedback;
+        if (tx.demoItemName) dbTx.demo_item_name = tx.demoItemName;
+        */
+
         return dbTx;
     };
+
+    const toDBTx = (tx: Partial<Transaction>) => prepareDBPayload(tx); // Compatibility wrapper
 
     const fetchData = async () => {
         try {
@@ -178,33 +240,80 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
     const getItem = (id: string) => items.find((i) => i.id === id);
 
     const addTransaction = async (newTx: Omit<Transaction, 'id' | 'balanceAfter'>) => {
-        const item = items.find((i) => i.id === newTx.itemId);
-        if (!item) return;
+        // If it's a demo unit with no itemId (manual entry), skip item update
+        const item = newTx.itemId ? items.find((i) => i.id === newTx.itemId) : undefined;
 
-        let newStock = item.currentStock;
-        if (newTx.type === 'IN') {
-            newStock += newTx.quantity;
-        } else {
-            newStock -= newTx.quantity;
+        let newStock = 0;
+
+        if (item) {
+            newStock = item.currentStock;
+            if (newTx.type === 'IN') {
+                newStock += newTx.quantity;
+            } else {
+                newStock -= newTx.quantity;
+            }
+
+            const { error: itemError } = await supabase
+                .from('items')
+                .update({ currentstock: newStock, updatedat: new Date().toISOString() })
+                .eq('id', item.id);
+
+            if (itemError) {
+                console.error('Error updating stock:', itemError);
+                alert('Failed to update stock level.');
+                return;
+            }
         }
 
-        const { error: itemError } = await supabase
-            .from('items')
-            .update({ currentstock: newStock, updatedat: new Date().toISOString() }) // Manual lowercasing here for simplicity or use helper
-            .eq('id', item.id);
+        // If no item found and no itemId provided (Manual Demo), we MUST assign it to a placeholder item
+        // to satisfy DB foreign key constraints (assuming itemid is NOT NULL).
+        let finalItemId = newTx.itemId || item?.id;
 
-        if (itemError) {
-            console.error('Error updating stock:', itemError);
-            alert('Failed to update stock level.');
-            return;
+        if (!finalItemId) {
+            // Check for existing placeholder
+            const placeholderCode = 'DEMO-MANUAL';
+            let placeholderItem = items.find(i => i.code === placeholderCode);
+
+            if (!placeholderItem) {
+                // Create it
+                const newItem = {
+                    name: 'Manual Demo Tracking Placeholder',
+                    code: placeholderCode,
+                    partNumber: 'N/A',
+                    location: 'Virtual',
+                    size: 'N/A',
+                    type: 'Virtual',
+                    year: new Date().getFullYear().toString(),
+                    unit: 'PCS' as const,
+                    minLevel: 0,
+                    currentStock: 0,
+                    description: 'System item for tracking manual demos',
+                    updatedAt: new Date().toISOString()
+                };
+
+                const dbItem = toDBItem(newItem);
+                const { data: createdItem, error: createError } = await supabase.from('items').insert([dbItem]).select().single();
+
+                if (createError) {
+                    console.error('Error creating placeholder item:', createError);
+                    alert('Failed to initialize demo tracking system.');
+                    return;
+                }
+
+                setItems(prev => [...prev, mapItemFromDB(createdItem)]);
+                placeholderItem = mapItemFromDB(createdItem);
+            }
+            finalItemId = placeholderItem.id;
         }
 
         const transactionPayload = {
             ...newTx,
-            balanceAfter: newStock,
+            itemId: finalItemId,
+            balanceAfter: item ? newStock : 0, // No balance tracking for manual demo items
         };
 
-        const dbTx = toDBTx(transactionPayload);
+        // Use prepareDBPayload to bundle metadata
+        const dbTx = prepareDBPayload(transactionPayload);
 
         const { data, error: txError } = await supabase
             .from('transactions')
@@ -214,11 +323,13 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
 
         if (txError) {
             console.error('Error recording transaction:', txError);
-            alert('Failed to record transaction.');
+            alert(`Failed to record transaction: ${txError.message}`);
             return;
         }
 
-        updateItem(item.id, { currentStock: newStock });
+        if (item) {
+            updateItem(item.id, { currentStock: newStock });
+        }
         setTransactions((prev) => [mapTxFromDB(data), ...prev]);
     };
 
@@ -268,6 +379,42 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
         }
     };
 
+    const updateTransaction = async (id: string, updates: Partial<Transaction>) => {
+        // Must fetch existing transaction to merge remarks/metadata correctly
+        const existingTx = transactions.find(t => t.id === id);
+        if (!existingTx) return;
+
+        const merged = { ...existingTx, ...updates };
+        const dbTx = prepareDBPayload(merged);
+
+        const { error } = await supabase
+            .from('transactions')
+            .update(dbTx)
+            .eq('id', id);
+
+        if (error) {
+            console.error('Error updating transaction:', error);
+            alert(`Failed to update transaction: ${error.message}`);
+            return;
+        }
+
+        setTransactions(prev =>
+            prev.map(tx => (tx.id === id ? { ...tx, ...updates } : tx))
+        );
+    };
+
+    const deleteTransaction = async (id: string) => {
+        const { error } = await supabase.from('transactions').delete().eq('id', id);
+
+        if (error) {
+            console.error('Error deleting transaction:', error);
+            alert('Failed to delete transaction.');
+            return;
+        }
+
+        setTransactions((prev) => prev.filter((tx) => tx.id !== id));
+    };
+
     const deleteAllItems = async () => {
         try {
             setLoading(true);
@@ -305,7 +452,9 @@ export const InventoryProvider: React.FC<{ children: ReactNode }> = ({ children 
                 addTransaction,
                 getItem,
                 batchImportItems,
-                deleteAllItems
+                deleteAllItems,
+                updateTransaction,
+                deleteTransaction
             }}
         >
             {children}

@@ -118,6 +118,28 @@ const InventoryList: React.FC = () => {
             item.partNumber.toLowerCase().includes(searchTerm.toLowerCase())
         );
 
+        // Apply Advanced Filters
+        if (filters.types.length > 0) {
+            result = result.filter(item => filters.types.includes(item.type));
+        }
+        if (filters.locations.length > 0) {
+            result = result.filter(item => filters.locations.includes(item.location));
+        }
+        if (filters.years.length > 0) {
+            result = result.filter(item => filters.years.includes(item.year));
+        }
+        if (filters.sizes.length > 0) {
+            result = result.filter(item => filters.sizes.includes(item.size));
+        }
+        if (filters.status.length > 0) {
+            result = result.filter(item => {
+                const isLow = item.currentStock <= item.minLevel;
+                if (filters.status.includes('low') && isLow) return true;
+                if (filters.status.includes('good') && !isLow) return true;
+                return false;
+            });
+        }
+
         if (sortConfig) {
             result.sort((a, b) => {
                 const aValue = a[sortConfig.key as keyof Item];
