@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Download, Search } from 'lucide-react';
 import { useInventory } from '../../../hooks';
-import * as XLSX from 'xlsx';
 import type { Transaction } from '../../../types';
+import { generateStockCardWorkbook, downloadWorkbook } from '../../../utils/excelExport';
 import { Button } from '../../common/Button';
 import { Card } from '../../common/Card';
 import { Input } from '../../common/Input';
@@ -13,6 +13,7 @@ const StockCard: React.FC = () => {
     const { items, transactions } = useInventory();
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedItemId, setSelectedItemId] = useState('');
+    const [selectedMonth, setSelectedMonth] = useState('ALL');
 
     const filteredItems = items.filter(item =>
         item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -21,30 +22,35 @@ const StockCard: React.FC = () => {
 
     const selectedItem = items.find(i => i.id === selectedItemId);
 
-    // Filter and sort transactions for selected item
-    const itemTransactions = transactions
-        .filter(t => t.itemId === selectedItemId)
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    const availableMonths = useMemo(() => {
+        if (!selectedItemId) return [];
+        const months = new Set<string>();
+        transactions.forEach(t => {
+            if (t.itemId === selectedItemId && t.date) {
+                months.add(t.date.substring(0, 7));
+            }
+        });
+        return Array.from(months).sort((a, b) => b.localeCompare(a));
+    }, [transactions, selectedItemId]);
 
-    const handleExport = () => {
+    // Filter and sort transactions for selected item
+    const itemTransactions = useMemo(() => {
+        return transactions
+            .filter(t => t.itemId === selectedItemId)
+            .filter(t => selectedMonth === 'ALL' || (t.date && t.date.startsWith(selectedMonth)))
+            .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    }, [transactions, selectedItemId, selectedMonth]);
+
+    const handleExport = async () => {
         if (!selectedItem) return;
 
-        const data = itemTransactions.map((t, index) => ({
-            'No.': index + 1,
-            'Date': t.date,
-            'In': t.type === 'IN' ? t.quantity : '',
-            'Out': t.type === 'OUT' ? t.quantity : '',
-            'Balance': t.balanceAfter,
-            'Document No': t.type === 'IN' ? t.grnNumber : t.mrrfNumber,
-            'Remarks': t.remarks || (t.type === 'IN' ? `GRN: ${t.grnNumber}` : `MRRF: ${t.mrrfNumber}`)
-        }));
-
-        const ws = XLSX.utils.json_to_sheet(data);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Stock Card');
-
-        // Add header info (manual approach for better formatting could be done, but this is simple)
-        XLSX.writeFile(wb, `${selectedItem.name}_StockCard.xlsx`);
+        try {
+            const workbook = await generateStockCardWorkbook(selectedItem, itemTransactions);
+            await downloadWorkbook(workbook, `${selectedItem.name}_StockCard.xlsx`);
+        } catch (error) {
+            console.error("Failed to export Excel file:", error);
+            alert("There was an error generating the Excel file.");
+        }
     };
 
     const columns: Column<Transaction>[] = [
@@ -122,10 +128,31 @@ const StockCard: React.FC = () => {
                                         <span>Current Stock: <strong style={{ color: 'var(--color-text-main)' }}>{selectedItem.currentStock} {selectedItem.unit}</strong></span>
                                     </div>
                                 </div>
-                                <Button onClick={handleExport} variant="secondary">
-                                    <Download size={18} />
-                                    Export Excel
-                                </Button>
+                                <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                    <select
+                                        value={selectedMonth}
+                                        onChange={(e) => setSelectedMonth(e.target.value)}
+                                        style={{
+                                            padding: '0.5rem',
+                                            borderRadius: 'var(--radius-md)',
+                                            border: '1px solid var(--color-border)',
+                                            backgroundColor: 'var(--color-bg-surface)',
+                                            color: 'var(--color-text-main)',
+                                            fontFamily: 'inherit'
+                                        }}
+                                    >
+                                        <option value="ALL">Overall Record</option>
+                                        {availableMonths.map(month => {
+                                            const date = new Date(`${month}-01`);
+                                            const monthName = date.toLocaleString('default', { month: 'long', year: 'numeric' });
+                                            return <option key={month} value={month}>{monthName}</option>;
+                                        })}
+                                    </select>
+                                    <Button onClick={handleExport} variant="secondary">
+                                        <Download size={18} />
+                                        Export Excel
+                                    </Button>
+                                </div>
                             </div>
 
                             <Table

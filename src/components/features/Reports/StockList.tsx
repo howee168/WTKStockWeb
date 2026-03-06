@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { saveAs } from 'file-saver';
 import ExcelJS from 'exceljs';
 import { Download, Search } from 'lucide-react';
@@ -13,47 +13,49 @@ const StockList: React.FC = () => {
     const { items } = useInventory();
     const [searchTerm, setSearchTerm] = useState('');
 
-    const filteredItems = items.filter(item =>
-        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        item.partNumber.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
-
+    const filteredItems = useMemo(() => {
+        return items.filter(item =>
+            item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            item.partNumber.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+    }, [items, searchTerm]);
 
     // Define types for mixed content
-    type RowItem = (typeof filteredItems[0] & { displayIndex?: number; isSeparator?: boolean; separatorLabel?: string });
+    type RowItem = (typeof items[0] & { displayIndex?: number; isSeparator?: boolean; separatorLabel?: string });
 
-    // 1. Sort by Code
-    const sortedItems = [...filteredItems].sort((a, b) => a.code.localeCompare(b.code));
+    const groupedData = useMemo(() => {
+        // 1. Sort by Code
+        const sortedItems = [...filteredItems].sort((a, b) => a.code.localeCompare(b.code));
 
-    // 2. Group items and inject separators
-    const groupedData: RowItem[] = [];
-    let lastPrefix = '';
-    let displayIndex = 1;
+        // 2. Group items and inject separators
+        const grouped: RowItem[] = [];
+        let lastPrefix = '';
+        let displayIndex = 1;
 
-    sortedItems.forEach((item) => {
-        // Group by first part of code (e.g. "NC" from "NC 001")
-        const prefix = item.code.trim().split(/[\s-]+/)[0].toUpperCase();
+        sortedItems.forEach((item) => {
+            // Group by first part of code (e.g. "NC" from "NC 001")
+            const prefix = item.code.trim().split(/[\s-]+/)[0].toUpperCase();
 
-        if (prefix !== lastPrefix) {
-            // Add separator (except maybe at very start if we want just separators BETWEEN)
-            // User image shows separator between distinct groups.
-            if (groupedData.length > 0) {
-                groupedData.push({
-                    id: `sep-${prefix}-${Date.now()}`, // Unique ID
-                    isSeparator: true,
-                    code: '', name: '', partNumber: '', unit: 'PCS', minLevel: 0, currentStock: 0, location: '', updatedAt: '', size: '', type: '', year: ''
-                } as any);
+            if (prefix !== lastPrefix) {
+                // Add separator
+                if (grouped.length > 0) {
+                    grouped.push({
+                        id: `sep-${prefix}-${Date.now()}`, // Unique ID
+                        isSeparator: true,
+                        code: '', name: '', partNumber: '', unit: 'PCS', minLevel: 0, currentStock: 0, location: '', updatedAt: '', size: '', type: '', year: ''
+                    } as any);
+                }
+                lastPrefix = prefix;
             }
-            lastPrefix = prefix;
-        }
 
-        groupedData.push({
-            ...item,
-            displayIndex: displayIndex++
+            grouped.push({
+                ...item,
+                displayIndex: displayIndex++
+            });
         });
-    });
+        return grouped;
+    }, [filteredItems]);
 
     const [isExporting, setIsExporting] = useState(false);
 

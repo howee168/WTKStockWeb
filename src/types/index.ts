@@ -20,7 +20,7 @@ export type TransactionType = 'IN' | 'OUT';
 
 export interface Transaction {
     id: string;
-    itemId: string; // Reference to Item
+    itemId?: string; // Reference to Item (Optional for Demo Manual Entry)
     type: TransactionType;
     date: string; // ISO String
     quantity: number;
@@ -40,4 +40,12 @@ export interface Transaction {
     pic?: string; // PIC
     requestQty?: number;
     returnQty?: number;
+
+    // Demo Tracking (These specific fields need to be explicitly typed for TS)
+    isDemo?: boolean;
+    demoStatus?: 'PENDING' | 'RETURNED';
+    demoReturnDate?: string;
+    demoFeedback?: string;
+    demoItemName?: string; // For manual entry without inventory link
+    customerPhone?: string; // For WhatsApp notifications
 }

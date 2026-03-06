@@ -6,6 +6,25 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+interface DemoMetadata {
+    isDemo?: boolean;
+    demoStatus?: string;
+    demoReturnDate?: string;
+    customerPhone?: string;
+    demoItemName?: string;
+    pic?: string;
+    [key: string]: any;
+}
+
+interface Transaction {
+    id: string;
+    remarks?: string;
+    date: string;
+    [key: string]: any;
+}
+
+interface DemoWithMetadata extends Transaction, DemoMetadata { }
+
 serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response('ok', { headers: corsHeaders })
@@ -50,46 +69,41 @@ serve(async (req) => {
 
         if (txError) throw txError
 
-        // Filter for Pending Demos (And check date if it's a batch run)
-        const demosToRemind = transactions.filter((t: any) => {
-            let metadata: any = {}
-            const cleanRemarks = t.remarks || ''
+        // Helper to parse metadata
+        const parseMetadata = (remarks?: string): DemoMetadata | null => {
+            const cleanRemarks = remarks || '';
             if (cleanRemarks.includes('|||JSON|||')) {
                 try {
-                    metadata = JSON.parse(cleanRemarks.split('|||JSON|||')[1])
-                } catch (e) { return false }
-            } else {
-                return false
+                    return JSON.parse(cleanRemarks.split('|||JSON|||')[1]);
+                } catch (e) {
+                    return null;
+                }
             }
-
-            // Check isDemo and Status
-            if (!metadata.isDemo || metadata.demoStatus !== 'PENDING') return false
-
-            // If it's a targeted run, we don't strictly check the date (admin selected it)
-            // If it's a batch run, we only send for overdue items
-            if (!targetTxId) {
-                if (!metadata.demoReturnDate) return false
-                return new Date(metadata.demoReturnDate) < now
-            }
-
-            return true
-        })
+            return null;
+        };
 
         // 3. Group by Customer Phone
-        const remindersToSend: Record<string, any[]> = {}
+        const remindersToSend: Record<string, DemoWithMetadata[]> = {}
 
-        demosToRemind.forEach((t: any) => {
-            let metadata: any = {}
-            try {
-                metadata = JSON.parse(t.remarks.split('|||JSON|||')[1])
-            } catch (e) { }
+        transactions.forEach((t: Transaction) => {
+            const metadata = parseMetadata(t.remarks);
+            if (!metadata) return;
 
-            const phone = metadata.customerPhone ? metadata.customerPhone.replace(/\D/g, '') : null
-            if (phone) {
-                if (!remindersToSend[phone]) remindersToSend[phone] = []
-                remindersToSend[phone].push({ ...t, ...metadata }) // Flatten
+            // Filter for Pending Demos
+            if (!metadata.isDemo || metadata.demoStatus !== 'PENDING') return;
+
+            // Check date if it's a batch run
+            if (!targetTxId) {
+                if (!metadata.demoReturnDate) return;
+                if (new Date(metadata.demoReturnDate) >= now) return;
             }
-        })
+
+            const phone = metadata.customerPhone ? metadata.customerPhone.replace(/\D/g, '') : null;
+            if (phone) {
+                if (!remindersToSend[phone]) remindersToSend[phone] = [];
+                remindersToSend[phone].push({ ...t, ...metadata });
+            }
+        });
 
         // 4. Send WhatsApp Messages
         const WHATSAPP_TOKEN = Deno.env.get('WHATSAPP_ACCESS_TOKEN')
@@ -99,17 +113,16 @@ serve(async (req) => {
             console.warn("WhatsApp Secrets missing. Skipping send.")
             return new Response(JSON.stringify({
                 message: "Simulated success (secrets missing)",
-                remindersCount: demosToRemind.length
+                remindersCount: Object.values(remindersToSend).flat().length
             }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             })
         }
 
-        const results = []
-        let allSuccess = true
         const useTemplate = body.useTemplate === true // Allow forcing template for testing
 
-        for (let [phone, items] of Object.entries(remindersToSend)) {
+        const sendPromises = Object.entries(remindersToSend).map(async ([phoneStr, items]) => {
+            let phone = phoneStr;
             // Normalize Malaysia numbers: if starts with '0', prepend '6'
             if (phone.startsWith('0')) {
                 phone = '6' + phone
@@ -117,9 +130,7 @@ serve(async (req) => {
             // Ensure it has at least 10 digits (basic guard)
             if (phone.length < 10) {
                 console.warn(`Invalid phone number length: ${phone}`)
-                results.push({ phone, success: false, error: 'Invalid phone number format' })
-                allSuccess = false
-                continue
+                return { phone, success: false, error: 'Invalid phone number format' }
             }
 
             let payload: any;
@@ -166,28 +177,38 @@ serve(async (req) => {
                 }
             }
 
-            const res = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload),
-            })
+            try {
+                const res = await fetch(`https://graph.facebook.com/v18.0/${PHONE_NUMBER_ID}/messages`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                })
 
-            const data = await res.json()
-            console.log("WhatsApp API Response:", JSON.stringify(data, null, 2));
-            const success = res.ok
-            if (!success) allSuccess = false
+                const data = await res.json()
+                console.log("WhatsApp API Response:", JSON.stringify(data, null, 2));
+                const success = res.ok
 
-            results.push({
-                phone,
-                success,
-                status: res.status,
-                error: data.error?.message || (success ? null : 'Unknown API error'),
-                message_id: data.messages?.[0]?.id
-            })
-        }
+                return {
+                    phone,
+                    success,
+                    status: res.status,
+                    error: data.error?.message || (success ? null : 'Unknown API error'),
+                    message_id: data.messages?.[0]?.id
+                }
+            } catch (err: any) {
+                return {
+                    phone,
+                    success: false,
+                    error: err.message
+                }
+            }
+        });
+
+        const results = await Promise.all(sendPromises);
+        const allSuccess = results.every(r => r.success);
 
         return new Response(JSON.stringify({
             success: allSuccess,
@@ -197,7 +218,7 @@ serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
 
-    } catch (error) {
+    } catch (error: any) {
         return new Response(JSON.stringify({ error: error.message }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 400,

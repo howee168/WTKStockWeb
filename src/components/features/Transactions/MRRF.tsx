@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ArrowUpFromLine, Search } from 'lucide-react';
 import { useInventory } from '../../../hooks';
 import { Button } from '../../common/Button';
@@ -22,12 +22,12 @@ const MRRF: React.FC = () => {
         remarks: ''
     });
 
-    const filteredItems = items.filter(item =>
+    const filteredItems = useMemo(() => items.filter(item =>
         item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.code.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    ), [items, searchTerm]);
 
-    const selectedItem = items.find(i => i.id === selectedItemId);
+    const selectedItem = useMemo(() => items.find(i => i.id === selectedItemId), [items, selectedItemId]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();

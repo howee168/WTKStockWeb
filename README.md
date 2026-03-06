@@ -1,73 +1,71 @@
-# React + TypeScript + Vite
+# Stockcard - Inventory & Demo Management
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Stockcard is a specialized inventory management system built with **React**, **TypeScript**, and **Vite**, integrated with **Supabase** for a real-time database and serverless automation.
 
-Currently, two official plugins are available:
+## 🚀 Key Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### 1. Inventory Management
+- **Universal Inventory List**: Centralized view of all stock items.
+- **Advanced Filtering**: Filter items by Category, Location, Year, Size, and Stock Status (Low/Good).
+- **Excel Import**: Quickly bootstrap your inventory by importing .xlsx or .csv files.
+- **Stock Thresholds**: Automatic visual indicators for low stock items.
 
-## React Compiler
+### 2. Demo Tracker
+- **Asset Tracking**: Keep track of items that are currently out with customers or being used for demonstrations.
+- **Workflow Management**: Transition items from "Active Demo" back to "Stock" with a single click.
+- **Metadata Stashing**: Stores customer phone numbers, expected return dates, and condition feedback within the transaction history.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### 3. WhatsApp Automation
+- **Automated Reminders**: Integrated with WhatsApp Business API via Supabase Edge Functions.
+- **Follow-ups**: Send automated messages to customers to remind them about demo returns or stock availability.
+- **Official Templates**: Supports `reminder_automation` template for professional and reliable messaging.
 
-## Expanding the ESLint configuration
+## 🛠️ Tech Stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **Frontend**: React 18, Vite, TypeScript
+- **Styling**: Vanilla CSS with modern Design Tokens
+- **Icons**: Lucide React
+- **Backend/Database**: [Supabase](https://supabase.com/)
+- **API**: WhatsApp Business API (Meta)
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## 📦 Installation & Setup
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd stockcard
+   ```
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Configure Environment Variables**:
+   Create a `.env` file in the root directory:
+   ```env
+   VITE_SUPABASE_URL=your_supabase_url
+   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
+
+4. **Launch Development Server**:
+   ```bash
+   npm run dev
+   ```
+
+## 🛠️ Deployment
+
+### Local Network Access
+To allow others on the same WiFi to access the site:
+```bash
+npm run dev -- --host
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Production Deployment
+The app is optimized for deployment on **Vercel**, **Netlify**, or any static hosting provider.
+```bash
+npm run build
 ```
+
+## 📝 License
+Proprietary - Developed for internal company use.
